@@ -18,6 +18,7 @@ import {
   TrendingUp,
   BarChart3
 } from 'lucide-react';
+import AINotes from './components/AINotes';
 
 // Mini-App Interface
 interface MiniApp {
@@ -363,6 +364,12 @@ const QuantumOS: React.FC = () => {
             <BarChart3 className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Mini-App Components */}
+        <AINotes 
+          isOpen={layout.activeApp === 'ai-notes'} 
+          onClose={() => setLayout(prev => ({ ...prev, activeApp: null }))} 
+        />
       </div>
     </div>
   );
