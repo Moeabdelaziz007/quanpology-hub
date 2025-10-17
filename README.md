@@ -1,6 +1,6 @@
 # Quanpology Hub
 
-Σ Synergy Hub: Revenue Strategy Engine - AI-powered revenue intelligence platform.
+Σ Quanpology Hub: Revenue Strategy Engine - AI-powered revenue intelligence platform.
 
 This repository contains the code for the Quanpology Hub, a platform for strategic revenue growth and data synergy.
 
