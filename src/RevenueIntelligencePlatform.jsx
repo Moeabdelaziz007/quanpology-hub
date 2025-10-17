@@ -2,15 +2,16 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
     Search, DollarSign, TrendingUp, AlertCircle, Users, Mail,
     ExternalLink, Code, BarChart3, Clock, Zap, Target,
-    FileText, CheckCircle, RefreshCw, Loader2, MinusCircle, History, Trash2
+    FileText, CheckCircle, RefreshCw, Loader2, MinusCircle, History, Trash2, Play
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, serverTimestamp, orderBy } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, collection, query, serverTimestamp, deleteDoc } from 'firebase/firestore';
 
 // --- Firebase Global Setup ---
-const appId = import.meta.env.VITE_APP_ID || 'rip-default-app-id';
-const firebaseConfig = import.meta.env.VITE_FIREBASE_CONFIG ? JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG) : {};
+// تم تحديث معرف التطبيق الافتراضي إلى 'quanpology-hub'
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'quanpology-hub';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 
 let app;
 let db;
@@ -84,7 +85,7 @@ const EMAIL_SCHEMA = {
 const simulateAIWorkflow = async (workflow, inputData) => {
     
     // API setup
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = ""; 
     const model = "gemini-2.5-flash-preview-09-2025";
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
@@ -253,8 +254,8 @@ const RevenueIntelligencePlatform = () => {
         if (!auth) return;
 
         const handleAuth = async () => {
-            if (import.meta.env.VITE_INITIAL_AUTH_TOKEN) {
-                await signInWithCustomToken(auth, import.meta.env.VITE_INITIAL_AUTH_TOKEN);
+            if (typeof __initial_auth_token !== 'undefined') {
+                await signInWithCustomToken(auth, __initial_auth_token);
             } else {
                 await signInAnonymously(auth);
             }
@@ -274,12 +275,40 @@ const RevenueIntelligencePlatform = () => {
         return () => unsubscribe();
     }, []);
 
+    // 3. الحذف من Firestore (وظيفة جديدة)
+    const deleteAnalysis = useCallback(async (analysisId) => {
+        if (!db || !userId) return;
+        try {
+            const docPath = `/artifacts/${appId}/users/${userId}/rip_analyses/${analysisId}`;
+            await deleteDoc(doc(db, docPath));
+            console.log(`Analysis ${analysisId} deleted successfully.`);
+        } catch (e) {
+            console.error("Error deleting document: ", e);
+            setError("Failed to delete analysis from history.");
+        }
+    }, [db, userId]);
+
+    // 4. إعادة تشغيل التحليل (وظيفة جديدة)
+    const rerunAnalysis = useCallback((analysis) => {
+        // 1. تحديث التاب النشط
+        setActiveTab(analysis.workflow);
+        // 2. ملء حقل الإدخال بالبيانات السابقة
+        setInputValue(analysis.input);
+        // 3. تشغيل التحليل (الدالة executeWorkflow ستبدأ تلقائيًا عند الضغط على زر التشغيل)
+        // ملاحظة: لا يمكن استدعاء executeWorkflow مباشرة هنا لتجنب تشغيلها قبل اكتمال setState، لذا سنعتمد على المستخدم للضغط على زر التحليل بعد ملء الحقول.
+        setResults(null);
+        setError('');
+        console.log(`Ready to rerun ${analysis.workflow} with input: ${analysis.input}`);
+    }, []);
+
+
     // --- Firestore Operations ---
 
     // 1. Fetch Analyses History (Real-time listener)
     useEffect(() => {
         if (!db || !userId || !isAuthReady) return;
 
+        // استخدام 'rip_analyses' كاسم لمجموعة البيانات (Collection Name)
         const collectionPath = `/artifacts/${appId}/users/${userId}/rip_analyses`;
         const q = collection(db, collectionPath);
         
@@ -552,17 +581,58 @@ const RevenueIntelligencePlatform = () => {
                     <p className="text-gray-500 italic">لا توجد تحليلات محفوظة بعد. قم بتشغيل سير عمل لحفظه.</p>
                 ) : (
                     analysesHistory.map((analysis) => (
-                        <div key={analysis.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition duration-150">
-                            <div className="flex justify-between items-center">
-                                <span className="font-semibold text-sm text-indigo-600">{analysis.workflow}</span>
-                                <span className="text-xs text-gray-500">
-                                    {analysis.createdAt ? new Date(analysis.createdAt.toDate()).toLocaleString() : 'Saving...'}
+                        <div key={analysis.id} className="p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition duration-150 flex flex-col space-y-3">
+                            <div className="flex justify-between items-start border-b pb-2">
+                                <div>
+                                    <span className="font-bold text-base text-indigo-700">{analysis.workflow}</span>
+                                    <p className="text-xs text-gray-500 truncate mt-0.5">Input: {analysis.input}</p>
+                                </div>
+                                <span className="text-xs text-gray-400 flex-shrink-0">
+                                    {analysis.createdAt ? new Date(analysis.createdAt.toDate()).toLocaleDateString() : 'N/A'}
                                 </span>
                             </div>
-                            <p className="text-xs text-gray-700 mt-1 truncate">
-                                Input: {analysis.input}
-                            </p>
-                            {/* NOTE: Delete functionality is complex and requires explicit user confirmation via a custom modal, not included here to maintain focus on core storage. */}
+
+                            {/* Summary Display (based on workflow type) */}
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-600 font-medium">
+                                    {(() => {
+                                        switch (analysis.workflow) {
+                                            case WORKFLOW_TABS.LEADS:
+                                                return `Revenue: ${analysis.output?.revenueEstimate?.monthlyRevenue || 'N/A'}`;
+                                            case WORKFLOW_TABS.PRICE:
+                                                return `Alert: ${analysis.output?.alertLevel || 'N/A'}`;
+                                            case WORKFLOW_TABS.REVIEW:
+                                                return `Sentiment: ${analysis.output?.overallSentiment || 'N/A'}/10.0`;
+                                            case WORKFLOW_TABS.SEO:
+                                                return `Traffic Value: ${analysis.output?.estimatedTrafficValue || 'N/A'}`;
+                                            case WORKFLOW_TABS.SOCIAL:
+                                                return `Engagement: ${analysis.output?.predictedEngagement || 'N/A'}`;
+                                            case WORKFLOW_TABS.EMAIL:
+                                                return `Improvement: ${analysis.output?.predictedImprovement || 'N/A'}`;
+                                            default:
+                                                return 'Output Summary N/A';
+                                        }
+                                    })()}
+                                </span>
+
+                                {/* Action Buttons */}
+                                <div className="flex space-x-2">
+                                    <button
+                                        onClick={() => rerunAnalysis(analysis)}
+                                        title="Rerun Analysis"
+                                        className="p-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-full transition duration-150 shadow-md"
+                                    >
+                                        <Play className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => deleteAnalysis(analysis.id)}
+                                        title="Delete Analysis"
+                                        className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full transition duration-150 shadow-md"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     ))
                 )}
@@ -632,7 +702,7 @@ const RevenueIntelligencePlatform = () => {
                                 {loading ? (
                                     <>
                                         <Loader2 className="w-5 h-5 animate-spin" />
-                                        Running... ({retries}/{MAX_RETRIES})
+                                        Analyze & Execute ({retries}/{MAX_RETRIES})
                                     </>
                                 ) : (
                                     <>
